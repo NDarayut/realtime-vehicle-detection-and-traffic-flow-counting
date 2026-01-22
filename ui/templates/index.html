@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detection & Counting</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #ffffff;
+            color: #333;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .section {
+            background: #f8f8f8;
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .section h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+        #step-upload {
+            max-width: 1100px;
+            margin-left: auto;
+            margin-right: auto;
+            padding: 40px;
+        }
+        #step-upload h2 {
+            font-size: 22px;
+            margin-bottom: 25px;
+            font-weight: 600;
+        }
+        .upload-zone {
+            border: 3px dashed #ccc;
+            border-radius: 8px;
+            padding: 80px 40px;
+            text-align: center;
+            background: #fafafa;
+            transition: all 0.3s ease;
+            margin-bottom: 25px;
+            cursor: pointer;
+        }
+        .upload-zone:hover {
+            border-color: #999;
+            background: #f5f5f5;
+        }
+        .upload-icon {
+            font-size: 48px;
+            color: #999;
+            margin-bottom: 20px;
+            pointer-events: none;
+        }
+        .upload-text {
+            font-size: 18px;
+            color: #666;
+            margin-bottom: 10px;
+            pointer-events: none;
+        }
+        .upload-hint {
+            font-size: 14px;
+            color: #999;
+            pointer-events: none;
+        }
+        #step-upload button {
+            padding: 16px 50px;
+            font-size: 16px;
+            font-weight: 500;
+        }
+        input[type="file"] {
+            display: block;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        button {
+            background: #000;
+            color: #fff;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #333;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #canvas-container {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            cursor: crosshair;
+            max-width: 100%;
+        }
+        .instruction {
+            text-align: center;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .progress-container {
+            width: 100%;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 20px 0;
+            height: 40px;
+            position: relative;
+        }
+        .progress-bar {
+            height: 100%;
+            background: #000;
+            width: 0%;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #333;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 2;
+        }
+        .progress-text.light {
+            color: #fff;
+        }
+        .downloads {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Real-Time Vehicle Detection and Traffic Flow Counting Sytem</h1>
+        
+        <div class="section" id="step-upload">
+            <h2>Step 1: Upload Video</h2>
+            <div class="upload-zone" onclick="document.getElementById('videoFile').click()">
+                <div class="upload-icon">📁</div>
+                <div class="upload-text" id="uploadText">Click or Drag Video File Here</div>
+                <div class="upload-hint">Supported formats: MP4, AVI, MOV</div>
+            </div>
+            <input type="file" id="videoFile" accept="video/*" style="display: none;" onchange="handleFileSelect()">
+            <button onclick="uploadVideo()">Upload Video</button>
+        </div>
+        
+        <div class="section hidden" id="step-setup">
+            <h2>Step 2: Define Regions</h2>
+            <div class="instruction" id="instruction">Click 4 points to define detection area</div>
+            <div id="canvas-container">
+                <canvas id="canvas"></canvas>
+            </div>
+            <button onclick="startProcessing()">Start Processing</button>
+        </div>
+        
+        <div class="section hidden" id="step-processing">
+            <h2>Processing Video</h2>
+            <div class="progress-container">
+                <div class="progress-bar" id="progressBar"></div>
+                <div class="progress-text" id="progressText">0%</div>
+            </div>
+        </div>
+        
+        <div class="section hidden" id="step-complete">
+            <h2>Processing Complete</h2>
+            <div class="downloads">
+                <button onclick="downloadVideo()">Download Counted Video</button>
+                <button onclick="downloadExcel()">Download Excel Report</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let canvas, ctx;
+        let detectionPoints = [];
+        let linePoints = [];
+        let phase = 'detection';
+        let firstFrameImage = null;
+        
+        function handleFileSelect() {
+            const fileInput = document.getElementById('videoFile');
+            const uploadText = document.getElementById('uploadText');
+            if (fileInput.files.length) {
+                uploadText.textContent = fileInput.files[0].name;
+            }
+        }
+        
+        function uploadVideo() {
+            const fileInput = document.getElementById('videoFile');
+            if (!fileInput.files.length) {
+                alert('Please select a video file');
+                return;
+            }
+            const formData = new FormData();
+            formData.append('video', fileInput.files[0]);
+            fetch('/upload', {method: 'POST', body: formData})
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) loadFirstFrame();
+                else alert('Upload failed: ' + data.error);
+            });
+        }
+        
+        function loadFirstFrame() {
+            fetch('/first_frame')
+            .then(response => response.json())
+            .then(data => {
+                const img = new Image();
+                img.onload = function() {
+                    document.getElementById('step-upload').classList.add('hidden');
+                    document.getElementById('step-setup').classList.remove('hidden');
+                    canvas = document.getElementById('canvas');
+                    ctx = canvas.getContext('2d');
+                    const maxWidth = 960;
+                    const scale = Math.min(1, maxWidth / img.width);
+                    canvas.width = img.width * scale;
+                    canvas.height = img.height * scale;
+                    firstFrameImage = img;
+                    redraw();
+                    canvas.addEventListener('click', handleClick);
+                };
+                img.src = data.image;
+            });
+        }
+        
+        function handleClick(event) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (event.clientX - rect.left) * scaleX;
+            const y = (event.clientY - rect.top) * scaleY;
+            
+            if (phase === 'detection') {
+                detectionPoints.push({x, y});
+                if (detectionPoints.length === 4) {
+                    phase = 'line';
+                    document.getElementById('instruction').textContent = 'Click 2 points to define counting line';
+                }
+                redraw();
+            } else if (phase === 'line') {
+                linePoints.push({x, y});
+                if (linePoints.length === 2) {
+                    phase = 'complete';
+                    document.getElementById('instruction').textContent = 'Setup complete. Click Start Processing to begin';
+                    canvas.style.cursor = 'default';
+                }
+                redraw();
+            }
+        }
+        
+        function redraw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(firstFrameImage, 0, 0, canvas.width, canvas.height);
+            
+            if (detectionPoints.length > 0) {
+                ctx.strokeStyle = '#FF0000';
+                ctx.fillStyle = '#FF0000';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(detectionPoints[0].x, detectionPoints[0].y);
+                for (let i = 1; i < detectionPoints.length; i++) {
+                    ctx.lineTo(detectionPoints[i].x, detectionPoints[i].y);
+                }
+                if (detectionPoints.length === 4) {
+                    ctx.closePath();
+                    ctx.globalAlpha = 0.2;
+                    ctx.fillStyle = '#00FF00';
+                    ctx.fill();
+                    ctx.globalAlpha = 1.0;
+                    ctx.strokeStyle = '#00FF00';
+                }
+                ctx.stroke();
+                detectionPoints.forEach((p, i) => {
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.fillStyle = '#000';
+                    ctx.font = '14px Arial';
+                    ctx.fillText(i + 1, p.x + 10, p.y);
+                });
+            }
+            
+            if (linePoints.length > 0) {
+                ctx.strokeStyle = '#FFFF00';
+                ctx.fillStyle = '#FFFF00';
+                ctx.lineWidth = 5;
+                if (linePoints.length === 2) {
+                    ctx.beginPath();
+                    ctx.moveTo(linePoints[0].x, linePoints[0].y);
+                    ctx.lineTo(linePoints[1].x, linePoints[1].y);
+                    ctx.stroke();
+                }
+                linePoints.forEach((p, i) => {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
+                    ctx.fill();
+                });
+            }
+        }
+        
+        function startProcessing() {
+            if (detectionPoints.length !== 4 || linePoints.length !== 2) {
+                alert('Please complete the setup first');
+                return;
+            }
+            const scale = firstFrameImage.width / canvas.width;
+            const detection_area = detectionPoints.map(p => [p.x * scale, p.y * scale]);
+            const counting_line = linePoints.map(p => [p.x * scale, p.y * scale]);
+            
+            fetch('/set_regions', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({detection_area, counting_line})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('step-setup').classList.add('hidden');
+                    document.getElementById('step-processing').classList.remove('hidden');
+                    fetch('/process', {method: 'POST'})
+                    .then(response => response.json())
+                    .then(() => checkProgress());
+                }
+            });
+        }
+        
+        function checkProgress() {
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            
+            const interval = setInterval(() => {
+                fetch('/progress')
+                .then(response => response.json())
+                .then(data => {
+                    const progress = data.progress || 0;
+                    const currentFrame = data.current_frame || 0;
+                    const totalFrames = data.total_frames || 0;
+                    
+                    progressBar.style.width = progress + '%';
+                    
+                    // Show percentage and frame count
+                    if (totalFrames > 0) {
+                        progressText.textContent = `${progress}% (${currentFrame}/${totalFrames})`;
+                    } else {
+                        progressText.textContent = `${progress}%`;
+                    }
+                    
+                    // Change text color based on progress
+                    if (progress > 50) {
+                        progressText.classList.add('light');
+                    } else {
+                        progressText.classList.remove('light');
+                    }
+                    
+                    if (data.status === 'complete') {
+                        clearInterval(interval);
+                        progressBar.style.width = '100%';
+                        progressText.textContent = `100% (${totalFrames}/${totalFrames})`;
+                        progressText.classList.add('light');
+                        setTimeout(() => {
+                            document.getElementById('step-processing').classList.add('hidden');
+                            document.getElementById('step-complete').classList.remove('hidden');
+                        }, 500);
+                    } else if (data.status === 'error') {
+                        clearInterval(interval);
+                        alert('Processing error occurred. Check console for details.');
+                    }
+                });
+            }, 1000);
+        }
+        
+        function downloadVideo() {
+            window.location.href = '/download_video';
+        }
+        
+        function downloadExcel() {
+            window.location.href = '/download_excel';
+        }
+    </script>
+</body>
+</html>

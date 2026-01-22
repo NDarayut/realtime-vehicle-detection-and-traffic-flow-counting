@@ -1,0 +1,7 @@
+ultralytics
+opencv-python
+matplotlib
+numpy
+openpyxl
+Flask
+Werkzeug
