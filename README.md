@@ -38,7 +38,7 @@ Gaussian blur: up to 2.5 px
 Noise: up to 0.5% of pixels
 
 ## Results & Conclusion
-
+C:\Users\chans\Documents\Sopheak\PersonalProject\yolo_model_ui\assets\tested-video.mp4
 The model shows strong detection capabilities for Cars and Rickshaws, which are suitable for production use. 
 
 However, performance varies across classes due to dataset imbalance, particularly for Buses and Trucks, which appeared less frequently during data collection.
