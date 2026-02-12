@@ -3,256 +3,245 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Detection & Counting</title>
+    <title>AI Traffic Analysis System</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --danger: #ef4444;
+            --danger-hover: #dc2626;
+            --bg: #f3f4f6;
+            --card-bg: #ffffff;
+            --text-main: #1f2937;
+            --text-muted: #6b7280;
+            --border: #e5e7eb;
         }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-            background: #ffffff;
-            color: #333;
-            padding: 20px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            padding: 40px 20px;
         }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        h1 {
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 24px;
-            font-weight: 600;
-        }
+
+        .container { max-width: 1400px; margin: 0 auto; }
+
+        header { text-align: center; margin-bottom: 50px; }
+        h1 { font-size: 2.5rem; font-weight: 800; color: #111827; margin-bottom: 10px; }
+        .subtitle { color: var(--text-muted); font-size: 1.1rem; }
+
         .section {
-            background: #f8f8f8;
-            border: 1px solid #ddd;
-            padding: 20px;
-            margin-bottom: 20px;
-            border-radius: 4px;
-        }
-        .section h2 {
-            font-size: 18px;
-            margin-bottom: 15px;
-            font-weight: 500;
-        }
-        #step-upload {
-            max-width: 1100px;
-            margin-left: auto;
-            margin-right: auto;
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
             padding: 40px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border);
         }
-        #step-upload h2 {
-            font-size: 22px;
-            margin-bottom: 25px;
-            font-weight: 600;
+
+        .section h2 { font-size: 1.5rem; margin-bottom: 25px; font-weight: 700; }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8fafc;
+            border-radius: 12px;
+            border: 1px solid var(--border);
         }
-        .upload-zone {
-            border: 3px dashed #ccc;
+
+        .config-item { display: flex; flex-direction: column; gap: 8px; }
+        .config-item label { font-weight: 600; font-size: 14px; color: var(--text-main); }
+        .config-item input {
+            padding: 12px;
+            border: 1px solid #d1d5db;
             border-radius: 8px;
-            padding: 80px 40px;
-            text-align: center;
-            background: #fafafa;
-            transition: all 0.3s ease;
-            margin-bottom: 25px;
-            cursor: pointer;
-        }
-        .upload-zone:hover {
-            border-color: #999;
-            background: #f5f5f5;
-        }
-        .upload-icon {
-            font-size: 48px;
-            color: #999;
-            margin-bottom: 20px;
-            pointer-events: none;
-        }
-        .upload-text {
-            font-size: 18px;
-            color: #666;
-            margin-bottom: 10px;
-            pointer-events: none;
-        }
-        .upload-hint {
-            font-size: 14px;
-            color: #999;
-            pointer-events: none;
-        }
-        #step-upload button {
-            padding: 16px 50px;
             font-size: 16px;
-            font-weight: 500;
         }
-        input[type="file"] {
-            display: block;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            width: 100%;
-            margin-bottom: 10px;
-        }
-        button {
-            background: #000;
-            color: #fff;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 4px;
+
+        .upload-zone {
+            border: 3px dashed #d1d5db;
+            border-radius: 12px;
+            padding: 100px 40px;
+            text-align: center;
+            background: #f9fafb;
+            transition: all 0.3s ease;
             cursor: pointer;
-            font-size: 14px;
-            margin-right: 10px;
+            margin-bottom: 30px;
         }
-        button:hover {
-            background: #333;
+        .upload-zone.dragover { border-color: var(--primary); background: #eef2ff; transform: scale(1.01); }
+
+        .btn-group { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 16px 32px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+            min-width: 180px;
         }
-        button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
+        button:hover { transform: translateY(-1px); opacity: 0.9; }
+        button.btn-danger { background: var(--danger); }
+        button.btn-danger:hover { background: var(--danger-hover); }
+
         #canvas-container {
             display: flex;
             justify-content: center;
-            margin: 20px 0;
+            margin: 30px 0;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
         }
-        canvas {
-            border: 1px solid #ddd;
-            cursor: crosshair;
-            max-width: 100%;
-        }
+        canvas { max-width: 100%; height: auto; cursor: crosshair; }
+
         .instruction {
             text-align: center;
-            padding: 10px;
-            background: #f0f0f0;
-            border-radius: 4px;
-            margin: 10px 0;
-            font-size: 14px;
+            padding: 15px;
+            background: #eff6ff;
+            color: #1e40af;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 600;
         }
+
+        .progress-wrapper { text-align: center; margin: 40px 0; }
         .progress-container {
             width: 100%;
-            background: #e0e0e0;
-            border-radius: 4px;
+            background: #e5e7eb;
+            border-radius: 999px;
             overflow: hidden;
-            margin: 20px 0;
             height: 40px;
             position: relative;
+            margin-bottom: 15px;
         }
         .progress-bar {
             height: 100%;
-            background: #000;
+            background: linear-gradient(90deg, #4f46e5, #818cf8);
             width: 0%;
-            transition: width 0.3s ease;
-            position: relative;
+            transition: width 0.4s ease;
         }
-        .progress-text {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #333;
-            font-size: 14px;
-            font-weight: 600;
-            z-index: 2;
-        }
-        .progress-text.light {
-            color: #fff;
-        }
-        .downloads {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-        }
-        .hidden {
-            display: none;
-        }
+        .progress-stats { font-weight: 700; font-size: 1.1rem; color: var(--text-main); margin-bottom: 5px; }
+        .frame-counter { font-size: 0.9rem; color: var(--text-muted); }
+
+        .hidden { display: none; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Real-Time Vehicle Detection and Traffic Flow Counting Sytem</h1>
+        <header>
+            <h1>AI Traffic Analysis System</h1>
+            <p class="subtitle">Real-Time Vehicle Detection and Flow Counting</p>
+        </header>
         
         <div class="section" id="step-upload">
-            <h2>Step 1: Upload Video</h2>
-            <div class="upload-zone" onclick="document.getElementById('videoFile').click()">
-                <div class="upload-icon">📁</div>
-                <div class="upload-text" id="uploadText">Click or Drag Video File Here</div>
-                <div class="upload-hint">Supported formats: MP4, AVI, MOV</div>
+            <h2>1. Video Selection</h2>
+            <div class="upload-zone" id="dropZone" onclick="document.getElementById('videoFile').click()">
+                <div style="font-size: 50px; margin-bottom: 15px;">📤</div>
+                <div id="uploadText" style="font-weight: 700; font-size: 1.2rem;">Drag & Drop Video File</div>
+                <div style="color: var(--text-muted);">or click to browse (MP4, AVI, MOV)</div>
             </div>
             <input type="file" id="videoFile" accept="video/*" style="display: none;" onchange="handleFileSelect()">
-            <button onclick="uploadVideo()">Upload Video</button>
+            <div class="btn-group">
+                <button onclick="uploadVideo()">Upload & Initialize</button>
+            </div>
         </div>
         
         <div class="section hidden" id="step-setup">
-            <h2>Step 2: Define Regions</h2>
-            <div class="instruction" id="instruction">Click 4 points to define detection area</div>
-            <div id="canvas-container">
-                <canvas id="canvas"></canvas>
+            <h2>2. Configure Detection & Settings</h2>
+            
+            <div class="config-grid">
+                <div class="config-item">
+                    <label for="fpsInput">Processing FPS</label>
+                    <input type="number" id="fpsInput" value="30" min="1" max="120" placeholder="e.g. 30">
+                    <small style="color:gray">Lower FPS speeds up analysis but may reduce accuracy.</small>
+                </div>
             </div>
-            <button onclick="startProcessing()">Start Processing</button>
+
+            <div class="instruction" id="instruction">📍 Click 4 points to define the Detection Zone</div>
+            <div id="canvas-container"><canvas id="canvas"></canvas></div>
+            
+            <div class="btn-group">
+                <button onclick="startProcessing()">Launch AI Analysis</button>
+                <button class="btn-danger" onclick="location.reload()">Reset All</button>
+            </div>
         </div>
         
         <div class="section hidden" id="step-processing">
-            <h2>Processing Video</h2>
-            <div class="progress-container">
-                <div class="progress-bar" id="progressBar"></div>
-                <div class="progress-text" id="progressText">0%</div>
+            <h2>3. AI Engine Processing</h2>
+            <div class="progress-wrapper">
+                <div class="progress-stats" id="progressPercent">0%</div>
+                <div class="progress-container">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+                <div class="frame-counter" id="frameStats">Initializing frames...</div>
+            </div>
+            <div class="btn-group">
+                <button class="btn-danger" id="cancelBtn" onclick="cancelProcessing()">Cancel Analysis</button>
             </div>
         </div>
         
         <div class="section hidden" id="step-complete">
-            <h2>Processing Complete</h2>
-            <div class="downloads">
-                <button onclick="downloadVideo()">Download Counted Video</button>
-                <button onclick="downloadExcel()">Download Excel Report</button>
+            <h2 style="color: #059669;">✅ Analysis Complete</h2>
+            <p style="text-align: center; margin-bottom: 30px;">Your video and traffic report are ready.</p>
+            <div class="btn-group">
+                <button onclick="downloadVideo()">Download Video</button>
+                <button style="background:#10b981" onclick="downloadExcel()">Download Excel</button>
+                <button style="background:#6b7280" onclick="location.reload()">New Analysis</button>
             </div>
         </div>
     </div>
 
     <script>
-        let canvas, ctx;
+        let canvas, ctx, firstFrameImage;
         let detectionPoints = [];
         let linePoints = [];
         let phase = 'detection';
-        let firstFrameImage = null;
-        
+        let progressInterval;
+
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('videoFile');
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(n => dropZone.addEventListener(n, e => {e.preventDefault(); e.stopPropagation();}));
+        dropZone.addEventListener('dragover', () => dropZone.classList.add('dragover'));
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', e => {
+            dropZone.classList.remove('dragover');
+            fileInput.files = e.dataTransfer.files;
+            handleFileSelect();
+        });
+
         function handleFileSelect() {
-            const fileInput = document.getElementById('videoFile');
-            const uploadText = document.getElementById('uploadText');
-            if (fileInput.files.length) {
-                uploadText.textContent = fileInput.files[0].name;
-            }
+            if (fileInput.files.length) document.getElementById('uploadText').textContent = "Selected: " + fileInput.files[0].name;
         }
-        
+
         function uploadVideo() {
-            const fileInput = document.getElementById('videoFile');
-            if (!fileInput.files.length) {
-                alert('Please select a video file');
-                return;
-            }
+            if (!fileInput.files.length) return alert('Please select a file');
             const formData = new FormData();
             formData.append('video', fileInput.files[0]);
+            document.getElementById('uploadText').textContent = "Uploading...";
             fetch('/upload', {method: 'POST', body: formData})
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) loadFirstFrame();
-                else alert('Upload failed: ' + data.error);
-            });
+                .then(res => res.json())
+                .then(data => data.success ? loadFirstFrame() : alert('Error: ' + data.error));
         }
-        
+
         function loadFirstFrame() {
-            fetch('/first_frame')
-            .then(response => response.json())
-            .then(data => {
+            fetch('/first_frame').then(res => res.json()).then(data => {
                 const img = new Image();
-                img.onload = function() {
+                img.onload = () => {
                     document.getElementById('step-upload').classList.add('hidden');
                     document.getElementById('step-setup').classList.remove('hidden');
                     canvas = document.getElementById('canvas');
                     ctx = canvas.getContext('2d');
-                    const maxWidth = 960;
-                    const scale = Math.min(1, maxWidth / img.width);
-                    canvas.width = img.width * scale;
-                    canvas.height = img.height * scale;
+                    const scale = Math.min(1, 1100 / img.width);
+                    canvas.width = img.width * scale; canvas.height = img.height * scale;
                     firstFrameImage = img;
                     redraw();
                     canvas.addEventListener('click', handleClick);
@@ -260,161 +249,123 @@
                 img.src = data.image;
             });
         }
-        
-        function handleClick(event) {
+
+        function handleClick(e) {
             const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const x = (event.clientX - rect.left) * scaleX;
-            const y = (event.clientY - rect.top) * scaleY;
-            
+            const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+            const y = (e.clientY - rect.top) * (canvas.height / rect.height);
             if (phase === 'detection') {
                 detectionPoints.push({x, y});
                 if (detectionPoints.length === 4) {
                     phase = 'line';
-                    document.getElementById('instruction').textContent = 'Click 2 points to define counting line';
+                    document.getElementById('instruction').textContent = '📏 Click 2 points for the Crossing Line';
                 }
-                redraw();
             } else if (phase === 'line') {
                 linePoints.push({x, y});
                 if (linePoints.length === 2) {
-                    phase = 'complete';
-                    document.getElementById('instruction').textContent = 'Setup complete. Click Start Processing to begin';
-                    canvas.style.cursor = 'default';
+                    phase = 'ready';
+                    document.getElementById('instruction').textContent = '✅ Setup complete. Adjust FPS and start.';
                 }
-                redraw();
             }
+            redraw();
         }
-        
+
         function redraw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(firstFrameImage, 0, 0, canvas.width, canvas.height);
             
+            // Draw Detection Area
             if (detectionPoints.length > 0) {
-                ctx.strokeStyle = '#FF0000';
-                ctx.fillStyle = '#FF0000';
+                ctx.strokeStyle = '#4f46e5';
                 ctx.lineWidth = 3;
                 ctx.beginPath();
                 ctx.moveTo(detectionPoints[0].x, detectionPoints[0].y);
-                for (let i = 1; i < detectionPoints.length; i++) {
-                    ctx.lineTo(detectionPoints[i].x, detectionPoints[i].y);
-                }
+                detectionPoints.forEach(p => ctx.lineTo(p.x, p.y));
                 if (detectionPoints.length === 4) {
                     ctx.closePath();
-                    ctx.globalAlpha = 0.2;
-                    ctx.fillStyle = '#00FF00';
+                    ctx.fillStyle = 'rgba(79, 70, 229, 0)';
                     ctx.fill();
-                    ctx.globalAlpha = 1.0;
-                    ctx.strokeStyle = '#00FF00';
                 }
                 ctx.stroke();
+
+                // Draw Dots for detection
                 detectionPoints.forEach((p, i) => {
-                    ctx.fillStyle = '#FF0000';
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
-                    ctx.fill();
-                    ctx.fillStyle = '#000';
-                    ctx.font = '14px Arial';
-                    ctx.fillText(i + 1, p.x + 10, p.y);
+                    ctx.fillStyle = '#4f46e5';
+                    ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, 2 * Math.PI); ctx.fill();
+                    ctx.fillStyle = 'white';
+                    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, 2 * Math.PI); ctx.fill();
+                    ctx.fillText(i + 1, p.x, p.y - 12);
                 });
             }
             
+            // Draw Crossing Line
             if (linePoints.length > 0) {
-                ctx.strokeStyle = '#FFFF00';
-                ctx.fillStyle = '#FFFF00';
+                ctx.strokeStyle = '#fbbf24';
                 ctx.lineWidth = 5;
-                if (linePoints.length === 2) {
-                    ctx.beginPath();
-                    ctx.moveTo(linePoints[0].x, linePoints[0].y);
-                    ctx.lineTo(linePoints[1].x, linePoints[1].y);
-                    ctx.stroke();
-                }
-                linePoints.forEach((p, i) => {
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
-                    ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(linePoints[0].x, linePoints[0].y);
+                if (linePoints[1]) ctx.lineTo(linePoints[1].x, linePoints[1].y);
+                ctx.stroke();
+
+                // Draw Dots for line
+                linePoints.forEach(p => {
+                    ctx.fillStyle = '#fbbf24';
+                    ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, 2 * Math.PI); ctx.fill();
+                    ctx.fillStyle = 'black';
+                    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, 2 * Math.PI); ctx.fill();
                 });
             }
         }
-        
+
         function startProcessing() {
-            if (detectionPoints.length !== 4 || linePoints.length !== 2) {
-                alert('Please complete the setup first');
-                return;
-            }
+            if (phase !== 'ready') return alert('Complete points first');
             const scale = firstFrameImage.width / canvas.width;
-            const detection_area = detectionPoints.map(p => [p.x * scale, p.y * scale]);
-            const counting_line = linePoints.map(p => [p.x * scale, p.y * scale]);
+            const fpsValue = document.getElementById('fpsInput').value;
             
             fetch('/set_regions', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({detection_area, counting_line})
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    document.getElementById('step-setup').classList.add('hidden');
-                    document.getElementById('step-processing').classList.remove('hidden');
-                    fetch('/process', {method: 'POST'})
-                    .then(response => response.json())
-                    .then(() => checkProgress());
-                }
+                body: JSON.stringify({
+                    detection_area: detectionPoints.map(p => [p.x*scale, p.y*scale]),
+                    counting_line: linePoints.map(p => [p.x*scale, p.y*scale]),
+                    processing_fps: parseInt(fpsValue)
+                })
+            }).then(() => {
+                document.getElementById('step-setup').classList.add('hidden');
+                document.getElementById('step-processing').classList.remove('hidden');
+                fetch('/process', {method: 'POST'});
+                checkProgress();
             });
         }
-        
+
         function checkProgress() {
-            const progressBar = document.getElementById('progressBar');
-            const progressText = document.getElementById('progressText');
-            
-            const interval = setInterval(() => {
-                fetch('/progress')
-                .then(response => response.json())
-                .then(data => {
-                    const progress = data.progress || 0;
-                    const currentFrame = data.current_frame || 0;
-                    const totalFrames = data.total_frames || 0;
-                    
-                    progressBar.style.width = progress + '%';
-                    
-                    // Show percentage and frame count
-                    if (totalFrames > 0) {
-                        progressText.textContent = `${progress}% (${currentFrame}/${totalFrames})`;
-                    } else {
-                        progressText.textContent = `${progress}%`;
-                    }
-                    
-                    // Change text color based on progress
-                    if (progress > 50) {
-                        progressText.classList.add('light');
-                    } else {
-                        progressText.classList.remove('light');
-                    }
-                    
+            progressInterval = setInterval(() => {
+                fetch('/progress').then(res => res.json()).then(data => {
+                    const prog = data.progress || 0;
+                    const curr = data.current_frame || 0;
+                    const total = data.total_frames || 0;
+                    document.getElementById('progressBar').style.width = prog + '%';
+                    document.getElementById('progressPercent').textContent = prog + '%';
+                    document.getElementById('frameStats').textContent = `Processing Frame ${curr} of ${total}`;
                     if (data.status === 'complete') {
-                        clearInterval(interval);
-                        progressBar.style.width = '100%';
-                        progressText.textContent = `100% (${totalFrames}/${totalFrames})`;
-                        progressText.classList.add('light');
-                        setTimeout(() => {
-                            document.getElementById('step-processing').classList.add('hidden');
-                            document.getElementById('step-complete').classList.remove('hidden');
-                        }, 500);
-                    } else if (data.status === 'error') {
-                        clearInterval(interval);
-                        alert('Processing error occurred. Check console for details.');
+                        clearInterval(progressInterval);
+                        document.getElementById('step-processing').classList.add('hidden');
+                        document.getElementById('step-complete').classList.remove('hidden');
                     }
                 });
             }, 1000);
         }
-        
-        function downloadVideo() {
-            window.location.href = '/download_video';
+
+        function cancelProcessing() {
+            if (confirm("Stop analysis?")) {
+                fetch('/cancel', {method: 'POST'}).then(() => {
+                    clearInterval(progressInterval);
+                    location.reload();
+                });
+            }
         }
-        
-        function downloadExcel() {
-            window.location.href = '/download_excel';
-        }
+
+        function downloadVideo() { window.location.href = '/download_video'; }
+        function downloadExcel() { window.location.href = '/download_excel'; }
     </script>
 </body>
 </html>
