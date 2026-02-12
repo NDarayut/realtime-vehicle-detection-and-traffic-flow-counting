@@ -47,7 +47,7 @@ ENV/
 # Jupyter / ML
 # ======================
 .ipynb_checkpoints/
-*.pt
+pt
 *.pth
 *.onnx
 *.h5
