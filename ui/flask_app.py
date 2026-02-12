@@ -5,7 +5,6 @@ from ultralytics import YOLO
 from collections import defaultdict
 from datetime import datetime
 import openpyxl
-from openpyxl.styles import Font, Alignment, PatternFill
 import os
 import base64
 from werkzeug.utils import secure_filename
@@ -17,16 +16,14 @@ app = Flask(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'uploads')
 app.config['OUTPUT_FOLDER'] = os.path.join(BASE_DIR, 'outputs')
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
-
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
 
 # Global State
 video_path = None
-detection_area = []
-counting_line = []
-processing_fps = 30 # Default
+polygons_data = [] # List of lists of points
+lines_data = []    # List of lists of points
+processing_fps = 30
 processing_progress = 0
 processing_status = "idle"
 is_cancelled = False 
@@ -34,68 +31,83 @@ counter_instance = None
 current_frame = 0
 total_frames = 0
 output_video_path = None
-show_detection_area = True # Global flag
+show_detection_area = True
 
 class VehicleLineCounter:
-    def __init__(self, detection_area, counting_line, show_area=True, model_path="../best.pt"):
+    def __init__(self, polygons, lines, show_area=True, model_path="../best.pt"):
         self.show_area = show_area
-        self.detection_area = np.array(detection_area, np.int32)
-        self.line_start = (int(counting_line[0][0]), int(counting_line[0][1]))
-        self.line_end = (int(counting_line[1][0]), int(counting_line[1][1]))
+        # Convert all polygon point lists to numpy arrays
+        self.polygons = [np.array(p, np.int32) for p in polygons]
+        # Lines are stored as lists of point tuples
+        self.lines = lines 
+        
         self.model = YOLO(model_path) 
         self.tracked_vehicles = {}
         self.total_count = 0
         self.class_counts = defaultdict(int)
         self.class_names = ['Bus', 'Car', 'Motocycle', 'Rickshaw', 'Truck']
         self.colors = {0: (0, 0, 255), 1: (255, 0, 0), 2: (0, 255, 0), 3: (255, 255, 0), 4: (255, 0, 255)}
-    
-    def point_in_polygon(self, point):
-        return cv2.pointPolygonTest(self.detection_area, point, False) >= 0
-    
-    def line_intersection(self, p1, p2):
-        x1, y1 = p1
-        x2, y2 = p2
-        x3, y3 = self.line_start
-        x4, y4 = self.line_end
-        denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
-        if abs(denom) < 1e-10: return False
-        t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
-        u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom
-        return 0 <= t <= 1 and 0 <= u <= 1
-    
-    def update_tracking(self, track_id, center, class_id, class_name):
+
+    def is_inside_any_polygon(self, point):
+        for poly in self.polygons:
+            if cv2.pointPolygonTest(poly, point, False) >= 0:
+                return True
+        return False
+
+    def intersect(self, A, B, C, D):
+        """Standard line segment intersection check"""
+        def ccw(A, B, C):
+            return (C[1]-A[1]) * (B[0]-A[0]) > (B[1]-A[1]) * (C[0]-A[0])
+        return ccw(A,C,D) != ccw(B,C,D) and ccw(A,B,C) != ccw(A,B,D)
+
+    def crossed_any_line(self, old_pos, new_pos):
+        """Checks if movement from old_pos to new_pos crosses any segment of any line"""
+        for line in self.lines:
+            # Each line can have multiple points (polyline)
+            for i in range(len(line) - 1):
+                p1 = line[i]
+                p2 = line[i+1]
+                if self.intersect(old_pos, new_pos, p1, p2):
+                    return True
+        return False
+
+    def update_tracking(self, track_id, center, class_name):
         if track_id not in self.tracked_vehicles:
-            self.tracked_vehicles[track_id] = {'last_position': center, 'crossed': False, 'class_id': class_id, 'class_name': class_name}
+            self.tracked_vehicles[track_id] = {'last_position': center, 'crossed': False}
             return False
+        
         vehicle = self.tracked_vehicles[track_id]
-        if not vehicle['crossed'] and self.line_intersection(vehicle['last_position'], center):
-            vehicle['crossed'] = True
-            self.total_count += 1
-            self.class_counts[class_name] += 1
-            vehicle['last_position'] = center
-            return True
+        if not vehicle['crossed']:
+            if self.crossed_any_line(vehicle['last_position'], center):
+                vehicle['crossed'] = True
+                self.total_count += 1
+                self.class_counts[class_name] += 1
+                return True
+        
         vehicle['last_position'] = center
         return False
 
     def draw_ui(self, frame):
-        # Only draw the Detection Polygon if the toggle is enabled
+        # Draw Polygons
         if self.show_area:
             overlay = frame.copy()
-            cv2.fillPoly(overlay, [self.detection_area], (0, 255, 0))
-            cv2.addWeighted(overlay, 0.3, frame, 0.7, 0, frame)
-            cv2.polylines(frame, [self.detection_area], True, (0, 255, 0), 2)
+            for poly in self.polygons:
+                cv2.fillPoly(overlay, [poly], (0, 255, 0))
+                cv2.polylines(frame, [poly], True, (0, 255, 0), 2)
+            cv2.addWeighted(overlay, 0.2, frame, 0.8, 0, frame)
         
-        # Always draw the yellow counting line
-        cv2.line(frame, self.line_start, self.line_end, (0, 255, 255), 4)
+        # Draw Lines (Yellow)
+        for line in self.lines:
+            pts = np.array(line, np.int32)
+            cv2.polylines(frame, [pts], False, (0, 255, 255), 3)
         
-        # Draw stats dashboard
+        # Dashboard
         y_offset = 40
-        cv2.rectangle(frame, (10, 10), (300, 40 + len(self.class_names) * 35), (0, 0, 0), -1)
+        cv2.rectangle(frame, (10, 10), (250, 40 + len(self.class_names) * 30), (0, 0, 0), -1)
         cv2.putText(frame, f"TOTAL: {self.total_count}", (20, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        y_offset += 35
         for i, name in enumerate(self.class_names):
-            cv2.putText(frame, f"{name}: {self.class_counts[name]}", (20, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.colors[i], 2)
             y_offset += 30
+            cv2.putText(frame, f"{name}: {self.class_counts[name]}", (20, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors.get(i, (255,255,255)), 2)
         return frame
 
     def process_video(self, video_path, output_path, target_fps):
@@ -106,74 +118,71 @@ class VehicleLineCounter:
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             
-            frame_skip = max(1, int(orig_fps / target_fps)) if target_fps > 0 else 1
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, target_fps, (width, height))
-            
+            out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), target_fps, (width, height))
             processing_status = "processing"
             
-            while True:
-                if is_cancelled:
-                    processing_status = "idle"
-                    break
-
+            while cap.isOpened():
+                if is_cancelled: break
                 ret, frame = cap.read()
                 if not ret: break
                 
                 current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
                 
-                results = self.model.track(source=frame, imgsz=640, conf=0.25, verbose=False, persist=True)
+                # YOLO Tracking
+                results = self.model.track(source=frame, persist=True, verbose=False, conf=0.25)
                 
-                if results[0].boxes is not None and results[0].boxes.id is not None:
+                if results[0].boxes and results[0].boxes.id is not None:
                     boxes = results[0].boxes.xyxy.cpu().numpy()
                     track_ids = results[0].boxes.id.cpu().numpy().astype(int)
                     classes = results[0].boxes.cls.cpu().numpy().astype(int)
                     
                     for box, tid, cls in zip(boxes, track_ids, classes):
-                        x1, y1, x2, y2 = box
-                        center = (int((x1 + x2) / 2), int((y1 + y2) / 2))
+                        center = (int((box[0] + box[2]) / 2), int((box[1] + box[3]) / 2))
                         
-                        if self.point_in_polygon(center):
-                            c_name = self.class_names[cls]
-                            just_crossed = self.update_tracking(tid, center, cls, c_name)
-                            color = (0, 255, 0) if just_crossed else self.colors[cls]
-                            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+                        # Only track/count if center is in at least ONE of the detection polygons
+                        if self.is_inside_any_polygon(center):
+                            c_name = self.class_names[cls] if cls < len(self.class_names) else "Vehicle"
+                            just_crossed = self.update_tracking(tid, center, c_name)
+                            
+                            color = (0, 255, 0) if just_crossed else self.colors.get(cls, (255,255,255))
+                            cv2.rectangle(frame, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), color, 2)
 
                 frame = self.draw_ui(frame)
                 out.write(frame)
-                
-                processing_progress = min(int((current_frame / total_frames) * 100), 100)
-                
-                if frame_skip > 1:
-                    for _ in range(frame_skip - 1):
-                        cap.grab() 
+                processing_progress = int((current_frame / total_frames) * 100)
             
             cap.release()
             out.release()
-            
-            if not is_cancelled:
-                processing_status = "complete"
-                processing_progress = 100
+            processing_status = "complete" if not is_cancelled else "idle"
             
         except Exception as e:
-            processing_status = "error"
             print(f"Error: {e}")
+            processing_status = "error"
 
-    def save_to_excel(self, excel_path):
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Traffic Report"
-        ws.append(["Vehicle Class", "Count", "Percentage"])
-        for name in self.class_names:
-            count = self.class_counts[name]
-            perc = (count / self.total_count * 100) if self.total_count > 0 else 0
-            ws.append([name, count, f"{perc:.1f}%"])
-        ws.append(["TOTAL", self.total_count, "100%"])
-        wb.save(excel_path)
+# --- Flask Routes ---
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+@app.route('/set_regions', methods=['POST'])
+def set_regions():
+    global polygons_data, lines_data, processing_fps, show_detection_area
+    data = request.json
+    # Now receiving lists of lists from your new frontend
+    polygons_data = data.get('polygons', [])
+    lines_data = data.get('lines', [])
+    processing_fps = int(data.get('fps', 30))
+    show_detection_area = data.get('show_detection_area', True)
+    return jsonify({'success': True})
+
+@app.route('/process', methods=['POST'])
+def process():
+    global counter_instance, output_video_path, is_cancelled
+    is_cancelled = False
+    output_video_path = os.path.join(app.config['OUTPUT_FOLDER'], 'output.mp4')
+    
+    counter_instance = VehicleLineCounter(polygons_data, lines_data, show_area=show_detection_area)
+    
+    t = threading.Thread(target=counter_instance.process_video, args=(video_path, output_video_path, processing_fps))
+    t.start()
+    return jsonify({'success': True})
 
 @app.route('/upload', methods=['POST'])
 def upload_video():
@@ -194,16 +203,10 @@ def get_first_frame():
     img_base64 = base64.b64encode(buffer).decode('utf-8')
     return jsonify({'image': f'data:image/jpeg;base64,{img_base64}'})
 
-@app.route('/set_regions', methods=['POST'])
-def set_regions():
-    global detection_area, counting_line, processing_fps, show_detection_area
-    data = request.json
-    detection_area = data.get('detection_area', [])
-    counting_line = data.get('counting_line', [])
-    processing_fps = int(data.get('processing_fps', 30))
-    # Capture the toggle value from frontend
-    show_detection_area = data.get('show_detection_area', True) 
-    return jsonify({'success': True})
+@app.route('/')
+def index():
+    return render_template('index.html')
+
 
 @app.route('/process', methods=['POST'])
 def process_video():
