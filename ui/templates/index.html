@@ -83,9 +83,8 @@
             flex-direction: column;
             align-items: center;
             padding: 20px 0;
-            gap: 10px; /* Reduced gap to fit without scrolling */
+            gap: 10px;
             border-right: 1px solid #334155;
-            /* Removed overflow-y: auto to prevent scrollbar */
         }
 
         .tool-group-label {
@@ -98,7 +97,7 @@
         }
 
         .tool-btn {
-            width: 44px; /* Slightly smaller to ensure fit */
+            width: 44px;
             height: 44px;
             display: flex;
             align-items: center;
@@ -160,7 +159,6 @@
 
         canvas { display: block; cursor: crosshair; }
 
-        /* Upload Zone */
         .upload-zone {
             border: 3px dashed #d1d5db;
             border-radius: 12px;
@@ -306,47 +304,36 @@
 
     <script>
         let canvas, ctx, firstFrameImage;
-        let detectionPoints = [];
-        let linePoints = [];
+        
+        // --- DATA STRUCTURE FOR MULTIPLE OBJECTS ---
+        // Each shape: { id: Date.now(), type: 'polygon'|'line', points: [{x,y},...] }
+        let shapes = []; 
+        let currentShape = null; // The shape currently being drawn
+        let selectedShape = null; // The shape currently selected for editing/deleting
         
         let selectedTool = 'polygon';
         let isDrawing = false;
-        
-        // Interaction State
         let isDragging = false;
-        let dragTarget = null; // {type: 'poly'|'line', index: 0}
+        let dragTarget = null; // { shapeIndex: int, pointIndex: int }
         
-        // Selection State
-        let selectedObject = null; // 'detection' or 'line'
-        
-        const pointRadius = 8;
+        const pointRadius = 6;
 
         // --- FILE HANDLING ---
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('videoFile');
         const uploadText = document.getElementById('uploadText');
         
-        // Drag & Drop Listeners
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, preventDefaults, false);
+            dropZone.addEventListener(eventName, e => {e.preventDefault(); e.stopPropagation();}, false);
         });
 
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-
-        ['dragenter', 'dragover'].forEach(() => dropZone.classList.add('dragover'));
-        ['dragleave', 'drop'].forEach(() => dropZone.classList.remove('dragover'));
-
-        dropZone.addEventListener('drop', handleDrop, false);
-
-        function handleDrop(e) {
-            const dt = e.dataTransfer;
-            const files = dt.files;
-            fileInput.files = files;
+        dropZone.addEventListener('dragover', () => dropZone.classList.add('dragover'));
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', e => {
+            dropZone.classList.remove('dragover');
+            fileInput.files = e.dataTransfer.files;
             handleFileSelect();
-        }
+        });
 
         function handleFileSelect() {
             if(fileInput.files.length) uploadText.textContent = "Selected: " + fileInput.files[0].name;
@@ -383,47 +370,41 @@
         // --- TOOLBAR ---
         function setTool(tool) {
             selectedTool = tool;
+            // Finish any current shape immediately when switching tools
+            if(currentShape) {
+                currentShape = null;
+                isDrawing = false;
+            }
+
             document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
-            // Try to find the button directly, or fall back to general mapping
             const btn = document.getElementById('tool-' + tool);
             if(btn) btn.classList.add('active');
             
-            // If selecting a shape tool (rect, circle, star), update instruction
             const instruction = document.getElementById('instruction');
-            if (['rect', 'circle', 'star'].includes(tool)) {
-                instruction.textContent = "📍 Click on canvas to place the shape";
-            } else if (tool === 'freehand') {
-                instruction.textContent = "✏️ Click and drag to draw a wiggle line";
-            } else if (tool === 'polyline') {
-                instruction.textContent = "📍 Click to add points. Right-click to finish.";
-            } else {
-                instruction.textContent = "📍 Draw manually or drag points";
-            }
+            if (['rect', 'circle', 'star'].includes(tool)) instruction.textContent = "📍 Click to place shape";
+            else if (tool === 'freehand') instruction.textContent = "✏️ Drag to draw";
+            else if (['polyline', 'polygon'].includes(tool)) instruction.textContent = "📍 Click to add points. Right-click to finish.";
+            else instruction.textContent = "📍 Click to start drawing";
         }
 
         function deleteSelected() {
-            if (!selectedObject) return alert("Select an object (Line or Polygon) first by clicking on it.");
-            if (selectedObject === 'detection') {
-                detectionPoints = [];
-                selectedObject = null;
-            } else if (selectedObject === 'line') {
-                linePoints = [];
-                selectedObject = null;
-            }
+            if (!selectedShape) return alert("Select a shape first.");
+            shapes = shapes.filter(s => s !== selectedShape);
+            selectedShape = null;
             redraw();
             updateStatus();
         }
         
         function clearAll() {
-            if(confirm("Delete everything?")) {
-                detectionPoints = []; linePoints = []; selectedObject = null; redraw();
+            if(confirm("Delete all zones and lines?")) {
+                shapes = []; selectedShape = null; currentShape = null; redraw();
             }
         }
 
         function updateStatus() {
             const el = document.getElementById('selectionStatus');
-            if (!selectedObject) el.textContent = "No object selected";
-            else el.textContent = selectedObject === 'detection' ? "Detection Zone Selected" : "Counting Line Selected";
+            if (!selectedShape) el.textContent = "No object selected";
+            else el.textContent = `${selectedShape.type.toUpperCase()} Selected`;
         }
 
         // --- GEOMETRY GENERATORS ---
@@ -433,7 +414,6 @@
                 {x: cx + size, y: cy + size}, {x: cx - size, y: cy + size}
             ];
         }
-
         function createCircle(cx, cy, radius=80, steps=16) {
             let pts = [];
             for(let i=0; i<steps; i++) {
@@ -442,7 +422,6 @@
             }
             return pts;
         }
-
         function createStar(cx, cy, outer=80, inner=30, points=5) {
             let pts = [];
             let angle = Math.PI / points;
@@ -459,75 +438,93 @@
             canvas.addEventListener('mousedown', onMouseDown);
             window.addEventListener('mousemove', onMouseMove);
             window.addEventListener('mouseup', onMouseUp);
-            // Stop context menu on right click (for polyline finish)
             canvas.addEventListener('contextmenu', e => {
                 e.preventDefault();
-                isDrawing = false; // Stop polyline
-                setTool('polygon'); // Reset tool
+                // Right click finishes current shape
+                if(currentShape) {
+                    currentShape = null;
+                    isDrawing = false;
+                    redraw();
+                }
             });
         }
 
         function getPos(e) {
             const r = canvas.getBoundingClientRect();
-            const sx = canvas.width / r.width;
-            const sy = canvas.height / r.height;
-            return { x: (e.clientX - r.left)*sx, y: (e.clientY - r.top)*sy };
+            return { 
+                x: (e.clientX - r.left) * (canvas.width / r.width), 
+                y: (e.clientY - r.top) * (canvas.height / r.height) 
+            };
         }
 
         function onMouseDown(e) {
             const pos = getPos(e);
 
-            // 1. Check Point Drag (Priority)
+            // 1. Check if clicking a Point (Edit Mode)
             const hit = checkPointHit(pos);
             if (hit) {
                 isDragging = true;
                 dragTarget = hit;
-                // Auto-select the object belonging to the point
-                selectedObject = hit.type === 'poly' ? 'detection' : 'line';
-                redraw();
+                selectedShape = shapes[hit.shapeIndex]; // Auto-select shape
                 updateStatus();
+                redraw();
                 return;
             }
 
-            // 2. Check Object Selection (Clicking on the shape body/line)
+            // 2. Check if clicking a Shape Body (Selection Mode)
             const objHit = checkObjectHit(pos);
             if (objHit) {
-                selectedObject = objHit;
-                redraw();
+                selectedShape = objHit;
                 updateStatus();
-                return;
-            } else {
-                // Clicked empty space: Deselect unless drawing new geometry
-                if (!['polyline', 'freehand', 'rect', 'circle', 'star'].includes(selectedTool)) {
-                    selectedObject = null;
-                    updateStatus();
-                    redraw();
-                }
+                redraw();
+                return; // Stop here, don't draw new shape if selecting
             }
 
             // 3. Drawing Logic
-            if (selectedTool === 'rect') {
-                detectionPoints = createRect(pos.x, pos.y);
-                setTool('polygon');
-            } else if (selectedTool === 'circle') {
-                detectionPoints = createCircle(pos.x, pos.y);
-                setTool('polygon');
-            } else if (selectedTool === 'star') {
-                detectionPoints = createStar(pos.x, pos.y);
-                setTool('polygon');
+            // If we are just clicking empty space, deselect, unless we are in the middle of drawing
+            if(!currentShape) selectedShape = null; 
+            updateStatus();
+
+            const isPoly = ['rect', 'circle', 'star', 'polygon'].includes(selectedTool);
+            const type = isPoly ? 'polygon' : 'line';
+
+            if (selectedTool === 'rect' || selectedTool === 'circle' || selectedTool === 'star') {
+                let pts = [];
+                if (selectedTool === 'rect') pts = createRect(pos.x, pos.y);
+                else if (selectedTool === 'circle') pts = createCircle(pos.x, pos.y);
+                else if (selectedTool === 'star') pts = createStar(pos.x, pos.y);
+                
+                const newShape = { id: Date.now(), type: 'polygon', points: pts };
+                shapes.push(newShape);
+                selectedShape = newShape; // Select newly created shape
+                setTool('polygon'); // Reset to default tool
+
             } else if (selectedTool === 'freehand') {
                 isDrawing = true;
-                linePoints = [{x: pos.x, y: pos.y}]; // Start new line
-            } else if (selectedTool === 'polyline') {
-                linePoints.push({x: pos.x, y: pos.y});
+                currentShape = { id: Date.now(), type: 'line', points: [pos] };
+                shapes.push(currentShape);
+
             } else if (selectedTool === 'line') {
-                // Standard 2-point line
-                if (linePoints.length >= 2) linePoints = []; 
-                linePoints.push({x: pos.x, y: pos.y});
-            } else if (selectedTool === 'polygon') {
-                 // Manual Polygon
-                 detectionPoints.push({x: pos.x, y: pos.y});
+                // 2-point line logic: Create new, or replace if not finished? 
+                // Let's make it create a new independent line every 2 clicks
+                if(!currentShape) {
+                    currentShape = { id: Date.now(), type: 'line', points: [pos] };
+                    shapes.push(currentShape);
+                } else {
+                    currentShape.points.push(pos);
+                    currentShape = null; // Finish after 2nd point
+                }
+
+            } else if (selectedTool === 'polyline' || selectedTool === 'polygon') {
+                // Multi-point logic
+                if(!currentShape) {
+                    currentShape = { id: Date.now(), type: type, points: [pos] };
+                    shapes.push(currentShape);
+                } else {
+                    currentShape.points.push(pos);
+                }
             }
+
             redraw();
         }
 
@@ -535,21 +532,21 @@
             const pos = getPos(e);
 
             if (isDragging && dragTarget) {
-                if (dragTarget.type === 'poly') detectionPoints[dragTarget.index] = pos;
-                else linePoints[dragTarget.index] = pos;
+                shapes[dragTarget.shapeIndex].points[dragTarget.pointIndex] = pos;
                 redraw();
                 return;
             }
 
-            if (isDrawing && selectedTool === 'freehand') {
-                const last = linePoints[linePoints.length-1];
-                const dist = Math.hypot(pos.x - last.x, pos.y - last.y);
-                if (dist > 5) linePoints.push(pos);
-                redraw();
+            if (isDrawing && selectedTool === 'freehand' && currentShape) {
+                const last = currentShape.points[currentShape.points.length-1];
+                if (Math.hypot(pos.x - last.x, pos.y - last.y) > 5) {
+                    currentShape.points.push(pos);
+                    redraw();
+                }
                 return;
             }
 
-            // Cursor styling
+            // Cursor logic
             const ptHit = checkPointHit(pos);
             if (ptHit) canvas.style.cursor = 'move';
             else {
@@ -563,37 +560,39 @@
             dragTarget = null;
             if (selectedTool === 'freehand') {
                 isDrawing = false;
-                setTool('line'); 
+                currentShape = null; 
             }
         }
 
         // --- HIT TESTING ---
         function checkPointHit(pos) {
-            for (let i = 0; i < linePoints.length; i++) {
-                if (Math.hypot(linePoints[i].x - pos.x, linePoints[i].y - pos.y) < pointRadius) return { type: 'line', index: i };
-            }
-            for (let i = 0; i < detectionPoints.length; i++) {
-                if (Math.hypot(detectionPoints[i].x - pos.x, detectionPoints[i].y - pos.y) < pointRadius) return { type: 'poly', index: i };
+            for (let i = shapes.length - 1; i >= 0; i--) {
+                const pts = shapes[i].points;
+                for (let j = 0; j < pts.length; j++) {
+                    if (Math.hypot(pts[j].x - pos.x, pts[j].y - pos.y) < pointRadius + 2) {
+                        return { shapeIndex: i, pointIndex: j };
+                    }
+                }
             }
             return null;
         }
 
         function checkObjectHit(pos) {
-            // Check Polygon (Inside)
-            if (detectionPoints.length >= 3) {
-                ctx.beginPath();
-                ctx.moveTo(detectionPoints[0].x, detectionPoints[0].y);
-                for(let i=1; i<detectionPoints.length; i++) ctx.lineTo(detectionPoints[i].x, detectionPoints[i].y);
-                ctx.closePath();
-                if (ctx.isPointInPath(pos.x, pos.y)) return 'detection';
-            }
-            // Check Line (Near stroke)
-            if (linePoints.length >= 2) {
-                for (let i=0; i<linePoints.length-1; i++) {
-                    const p1 = linePoints[i];
-                    const p2 = linePoints[i+1];
-                    const d = distToSegment(pos, p1, p2);
-                    if (d < 10) return 'line';
+            // Check top-most shape first
+            for (let i = shapes.length - 1; i >= 0; i--) {
+                const s = shapes[i];
+                if (s.type === 'polygon') {
+                    // Ray casting test for polygon inside
+                    ctx.beginPath();
+                    ctx.moveTo(s.points[0].x, s.points[0].y);
+                    for(let k=1; k<s.points.length; k++) ctx.lineTo(s.points[k].x, s.points[k].y);
+                    ctx.closePath();
+                    if (ctx.isPointInPath(pos.x, pos.y)) return s;
+                } else {
+                    // Distance to segment for lines
+                    for (let k=0; k<s.points.length-1; k++) {
+                        if (distToSegment(pos, s.points[k], s.points[k+1]) < 8) return s;
+                    }
                 }
             }
             return null;
@@ -609,61 +608,67 @@
 
         function redraw() {
             ctx.clearRect(0,0,canvas.width, canvas.height);
-            ctx.drawImage(firstFrameImage, 0, 0, canvas.width, canvas.height);
+            if(firstFrameImage) ctx.drawImage(firstFrameImage, 0, 0, canvas.width, canvas.height);
 
-            // Draw Polygon
-            if (detectionPoints.length > 0) {
-                const isSel = selectedObject === 'detection';
-                ctx.strokeStyle = isSel ? '#ffffff' : '#4f46e5';
-                ctx.lineWidth = isSel ? 4 : 3;
+            shapes.forEach(shape => {
+                const isSel = (shape === selectedShape);
+                const isPoly = shape.type === 'polygon';
                 
                 ctx.beginPath();
-                ctx.moveTo(detectionPoints[0].x, detectionPoints[0].y);
-                detectionPoints.forEach(p => ctx.lineTo(p.x, p.y));
-                ctx.closePath();
-                
-                ctx.fillStyle = isSel ? 'rgba(79, 70, 229, 0.4)' : 'rgba(79, 70, 229, 0.2)';
-                ctx.fill();
-                ctx.stroke();
+                if(shape.points.length > 0) ctx.moveTo(shape.points[0].x, shape.points[0].y);
+                shape.points.forEach(p => ctx.lineTo(p.x, p.y));
 
-                detectionPoints.forEach(p => {
-                    ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, 2*Math.PI);
-                    ctx.fillStyle = '#4f46e5'; ctx.fill();
-                    ctx.strokeStyle = 'white'; ctx.lineWidth=2; ctx.stroke();
+                if(isPoly) {
+                    ctx.closePath();
+                    ctx.fillStyle = isSel ? 'rgba(79, 70, 229, 0.4)' : 'rgba(79, 70, 229, 0.2)';
+                    ctx.fill();
+                    ctx.strokeStyle = isSel ? '#ffffff' : '#4f46e5';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                } else {
+                    ctx.strokeStyle = isSel ? '#ffffff' : '#fbbf24';
+                    ctx.lineWidth = 4;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.stroke();
+                    
+                    // If selected, draw a thin colored line inside the white selection to make it pop
+                    if(isSel) {
+                        ctx.strokeStyle = '#fbbf24';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+                }
+
+                // Draw Vertices
+                shape.points.forEach(p => {
+                    ctx.beginPath(); 
+                    ctx.arc(p.x, p.y, isSel ? 6 : 4, 0, 2*Math.PI);
+                    ctx.fillStyle = isPoly ? '#4f46e5' : '#fbbf24'; 
+                    ctx.fill();
+                    ctx.strokeStyle = '#fff'; 
+                    ctx.lineWidth=1; 
+                    ctx.stroke();
                 });
-            }
-
-            // Draw Line
-            if (linePoints.length > 0) {
-                const isSel = selectedObject === 'line';
-                ctx.strokeStyle = isSel ? '#ffffff' : '#fbbf24';
-                ctx.lineWidth = isSel ? 6 : 5;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-
-                ctx.beginPath();
-                ctx.moveTo(linePoints[0].x, linePoints[0].y);
-                for(let i=1; i<linePoints.length; i++) ctx.lineTo(linePoints[i].x, linePoints[i].y);
-                ctx.stroke();
-
-                linePoints.forEach(p => {
-                    ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, 2*Math.PI);
-                    ctx.fillStyle = '#fbbf24'; ctx.fill();
-                    ctx.strokeStyle = 'black'; ctx.lineWidth=2; ctx.stroke();
-                });
-            }
+            });
         }
 
         let progressInterval;
         function startProcessing() {
-            if (!detectionPoints.length || linePoints.length < 2) return alert("Please define zones first");
+            if (shapes.length === 0) return alert("Please add at least one zone or line.");
+            
             const scale = firstFrameImage.width / canvas.width;
+            
+            // Separate shapes into lists for the backend
+            const polygons = shapes.filter(s => s.type === 'polygon').map(s => s.points.map(p => [p.x*scale, p.y*scale]));
+            const lines = shapes.filter(s => s.type === 'line').map(s => s.points.map(p => [p.x*scale, p.y*scale]));
+
             fetch('/set_regions', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    detection_area: detectionPoints.map(p => [p.x*scale, p.y*scale]),
-                    counting_line: linePoints.map(p => [p.x*scale, p.y*scale]),
+                    polygons: polygons, // Send Array of Arrays
+                    lines: lines,       // Send Array of Arrays
                     processing_fps: parseInt(document.getElementById('fpsInput').value),
                     show_detection_area: document.getElementById('showAreaToggle').checked
                 })
